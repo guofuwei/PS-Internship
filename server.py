@@ -99,7 +99,44 @@ class Client_Handle():
             conn.commit()
             self.client_socket.send(json.dumps({'code':'OK','msg':username}).encode('utf-8'))
 
+    def group_msg_cat_view(self):
+        sql='''select * from group_msg'''
+        cursor1.execute(sql)
+        data=cursor1.fetchall()
+        END='THE MSG IS END'
+        for i in range(0,len(data)):
+            send_data='内容:{:<10s}     时间:{}'.format(data[i][2],data[i][1].strftime('%Y-%m-%d %H:%M:%S'))
+            self.client_socket.send((send_data+'$$##$$').encode('utf-8'))
+        self.client_socket.send(END.encode('utf-8'))
+
+    def add_friend_view(self):
+        friend_name=self.client_socket.recv(1024).decode('utf-8')
+        sql='''select * from user_profile where username=%s'''
+        cursor1.execute(sql,[friend_name])
+        data=cursor1.fetchone()
+        if data:
+            self.client_socket.send('OK'.encode('utf-8'))
+            is_flag=self.client_socket.recv(1024).decode('utf-8')
+            if is_flag=='YES':
+                try:
+                    sql='''select * from user_profile where username=%s'''
+                    cursor1.execute(sql,[self.username])
+                    data_now=cursor1.fetchone()
+                    if friend_name in data_now[2]:
+                        self.client_socket.send('Already'.encode('utf-8'))
+                    else:
+                        updated_friend_list=data_now[2]+friend_name+'++'
+                        sql='''update user_profile set friend_list=%s where username=%s'''
+                        cursor1.execute(sql,[updated_friend_list,self.username])
+                        conn.commit()
+                        self.client_socket.send('OK'.encode('utf-8'))
+                except:
+                    self.client_socket.send('FAIL'.encode('utf-8'))
+        else:
+            self.client_socket.send('FAIL'.encode('utf-8'))
     
+
+
     def run(self):
         global username_list
         # 开始处理需要的业务请求
@@ -115,7 +152,15 @@ class Client_Handle():
                     self.register_view()
                 elif view_flag=='GROUP_CHAT':
                     self.recvmsg_group_view()
+                elif view_flag=='GROUP_MSG_CAT':
+                    self.group_msg_cat_view()
+                elif view_flag=='ADD_FRIEND':
+                    self.add_friend_view()
             except:
+                try:
+                    username_list.remove(self.username)
+                except:
+                    pass
                 break
 
 
