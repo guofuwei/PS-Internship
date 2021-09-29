@@ -14,7 +14,8 @@ conn = pymysql.connect(
     database=settings.MYSQL_CONFIG['DATABASE'],)
 cursor1=conn.cursor()
 group_client=[]
-username_list=[]
+username_dic={}
+private_client=[]
 
 class Client_Handle():
     def __init__(self,client_socket):
@@ -51,7 +52,8 @@ class Client_Handle():
                 break
 
     def login_view(self):
-        global username_list
+        # print('***************************')
+        global username_dic
         # 拿取参数
         json_obj=json.loads(self.client_socket.recv(1024).decode('utf-8'))
         username=json_obj.get('username')
@@ -60,20 +62,22 @@ class Client_Handle():
         # 校验参数
         if not username or not password:
             self.client_socket.send(json.dumps({'code':10100,'msg':'用户名或密码为空'}).encode('utf-8'))
-        elif username_list.count(username):
+        elif username_dic.get(username):
             self.client_socket.send(json.dumps({'code':10105,'msg':'该用户已登录'}).encode('utf-8'))
         else:
         # 尝试登录
+            # print('-----------------')
             p_m=hashlib.md5()
             p_m.update(password.encode())
             password_m=p_m.hexdigest()
             sql="select * from user_profile where username=%s and password=%s"
             try:
-                # print(username,password_m)
+                # ps
+                # print(username,password_m) 
                 flag=cursor1.execute(sql,[username,password_m])
                 if flag:
                     self.username=username
-                    username_list.append(username)
+                    username_dic[self.username]=self.client_socket
                     self.client_socket.send(json.dumps({'code':'OK','msg':username}).encode('utf-8'))
                 else:
                     self.client_socket.send(json.dumps({'code':10101,'msg':'用户名或密码错误'}).encode('utf-8'))
@@ -119,10 +123,18 @@ class Client_Handle():
             is_flag=self.client_socket.recv(1024).decode('utf-8')
             if is_flag=='YES':
                 try:
+                    # bug
                     sql='''select * from user_profile where username=%s'''
                     cursor1.execute(sql,[self.username])
                     data_now=cursor1.fetchone()
-                    if friend_name in data_now[2]:
+                    # print(data_now)
+                    if not data_now[2]:
+                        updated_friend_list=friend_name+'++'
+                        sql='''update user_profile set friend_list=%s where username=%s'''
+                        cursor1.execute(sql,[updated_friend_list,self.username])
+                        conn.commit()
+                        self.client_socket.send('OK'.encode('utf-8'))
+                    elif friend_name in data_now[2]:
                         self.client_socket.send('Already'.encode('utf-8'))
                     else:
                         updated_friend_list=data_now[2]+friend_name+'++'
@@ -132,19 +144,85 @@ class Client_Handle():
                         self.client_socket.send('OK'.encode('utf-8'))
                 except:
                     self.client_socket.send('FAIL'.encode('utf-8'))
+
+
+
+
+                    
         else:
             self.client_socket.send('FAIL'.encode('utf-8'))
-    
 
+    def cat_friend_view(self):
+        sql='''select * from user_profile where username=%s'''
+        # print(self.username)
+        cursor1.execute(sql,[self.username])
+        data=cursor1.fetchone()
+        if data[2]:
+            self.client_socket.send(data[2].encode('utf-8'))
+        else:
+            # print('---------------')
+            self.client_socket.send('$$##$$'.encode('utf-8'))
+            # print('================')
+
+
+    def private_chat_view(self):
+        self.cat_friend_view()
+        friend_name=self.client_socket.recv(1024).decode('utf-8')
+        sql='''select * from user_profile where username=%s'''
+        cursor1.execute(sql,[self.username])
+        user_data=cursor1.fetchone()
+        # print(user_data)
+        # 该用户存在
+        if not user_data[2]:
+            self.client_socket.send('FAIL'.encode('utf-8'))
+        elif friend_name in user_data[2]:
+            self.client_socket.send('OK'.encode('utf-8'))
+            # 该用户在线
+            if friend_name in username_dic:
+                self.client_socket.send('OK'.encode('utf-8'))
+            # 该用户不在线
+            else:
+                self.client_socket.send('FAIL'.encode('utf-8'))
+            flag=self.client_socket.recv(1024).decode('utf-8')
+            if flag=='YES':
+                self.private_chat_detail_view(friend_name)
+        else:
+            self.client_socket.send('FAIL'.encode('utf-8'))
+
+
+    def private_chat_detail_view(self,friend_name):
+        global private_client
+        private_client.append(self.username)
+        # ps
+        print(private_client)
+        global username_dic
+        while True:
+            try:
+                recv_data=self.client_socket.recv(1024).decode('utf-8')
+                if recv_data=='EXIT':
+                    self.client_socket.send('$$##$$EXIT$$##$$'.encode('utf-8'))
+                    if friend_name in private_client:
+                        send_data='%s已离开聊天室' %self.username
+                        username_dic[friend_name].send(send_data.encode('utf-8'))
+                    break
+                elif recv_data:
+                    sql=''''insert into private_msg(username1,username2,content) values(%s,%s,%s)'''
+                    cursor1.execute(sql,[self.username,friend_name,recv_data])
+                    conn.commit()
+                    if friend_name in private_client:
+                        username_dic[friend_name].send(recv_data.encode('utf-8'))
+            except:
+                break
+        private_client.remove(self.username)
 
     def run(self):
-        global username_list
+        global username_dic
         # 开始处理需要的业务请求
         while True:
             try:
                 view_flag=self.client_socket.recv(1024).decode('utf-8')
                 if not view_flag:
-                    username_list.remove(self.username)
+                    username_dic.pop(self.username)
                     exit()
                 if view_flag=='LOGIN':
                     self.login_view()
@@ -156,9 +234,13 @@ class Client_Handle():
                     self.group_msg_cat_view()
                 elif view_flag=='ADD_FRIEND':
                     self.add_friend_view()
+                elif view_flag=='CAT_FRIEND':
+                    self.cat_friend_view()
+                elif view_flag=='PRIVATE_CHAT':
+                    self.private_chat_view()
             except:
                 try:
-                    username_list.remove(self.username)
+                    username_dic.pop(self.username)
                 except:
                     pass
                 break

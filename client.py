@@ -43,12 +43,13 @@ class Client():
             # print(username,password)
             self.theclient_socket.send(json.dumps({'username':username,'password':password}).encode('utf-8'))
             recv_flag=json.loads(self.theclient_socket.recv(1024).decode('utf-8'))
+            # print('===================================')
             if recv_flag.get('code')=='OK':
                 print('登录成功!')
                 return recv_flag
             else:
                 print(recv_flag.get('msg'))
-                # time.sleep(1)
+                time.sleep(0.5)
                 os.system('cls')
                 return recv_flag
 
@@ -66,7 +67,7 @@ class Client():
                 return recv_flag
             else:
                 print(recv_flag.get('msg'))
-                # time.sleep(1)
+                time.sleep(0.5)
                 os.system('cls')
                 return recv_flag
         elif servertype=='0':
@@ -129,6 +130,79 @@ class Client():
         # os.system('cls')
 
 
+    def cat_friend(self):
+        print('您的好友列表如下:')
+        # print('-------------------')
+        recv_data=self.theclient_socket.recv(8192).decode('utf-8')
+        # print('=======================')
+        if recv_data=='$$##$$':
+            print('无')
+        else:
+            friend_list=recv_data.split('++')
+            for friend in friend_list:
+                print(friend)
+        os.system('pause')
+
+
+    def private_chat(self):
+        self.cat_friend()
+        friend_name=input('请输入你要私聊的好友用户名:')
+        self.theclient_socket.send(friend_name.encode('utf-8'))
+        flag=self.theclient_socket.recv(1024).decode('utf-8')
+        if flag=='OK':
+            flag=self.theclient_socket.recv(1024).decode('utf-8')
+            if flag=='OK':
+                while True:
+                    flag=input('该用户在线，是否要进行私聊(是:YES/否:NO):')
+                    if flag=='NO':
+                        self.theclient_socket.send('EXIT'.encode('utf-8'))
+                        break
+                    elif flag=='YES':
+                        self.theclient_socket.send('YES'.encode('utf-8'))
+                        self.private_chat_detail()
+                        break
+                    else:
+                        print('输入错误，请再次尝试输入!')
+            else:
+                while True:
+                    flag=input('该用户不在线，是否要进行私聊(是:YES/否:NO):')
+                    if flag=='NO':
+                        self.theclient_socket.send('EXIT'.encode('utf-8'))
+                        break
+                    elif flag=='YES':
+                        self.theclient_socket.send('YES'.encode('utf-8'))
+
+                        # 同时开启监听和发送两个进程
+                        t1=threading.Thread(target=self.private_chat_detail,args=(friend_name,))
+                        t2=threading.Thread(target=self.recv_private_msg)
+                        t1.start()
+                        t2.start()
+                        t1.join()
+                        t2.join()
+                        break
+                    else:
+                        print('输入错误，请再次尝试输入!')
+        else:
+            print('该用户不存在')
+
+    def private_chat_detail(self,friend_name):
+        # 这里还剩拉取未接受的消息功能未完成
+        os.system('cls')
+        print('*****欢迎来到你和%s的私人聊天室*****' %friend_name)
+        print('*****输入EXIT以退出*****')
+        self.send_msg()
+
+    def recv_private_msg(self):
+        while True:
+            try:
+                recv_data=self.theclient_socket.recv(1024).decode('utf-8')
+                if recv_data=='$$##$$EXIT$$##$$':
+                    break
+                elif recv_data:
+                    print(recv_data)
+            except:
+                break
+        
 
     def run(self):
         print('*****欢迎来到网络聊天室v1.0*****')
@@ -149,6 +223,8 @@ class Client():
             print('输入1：进入公共聊天室')
             print('输入2:查看群聊记录')
             print('输入3:搜索并添加好友')
+            print('输入4:查看好友列表')
+            print('输入5:选择好友进行私聊')
             print('输入0:退出程序')
 
             servernum=input('请输入选择的功能:')
@@ -176,7 +252,14 @@ class Client():
                 self.theclient_socket.send('ADD_FRIEND'.encode('utf-8'))
                 os.system('cls')
                 self.add_friend()
-
+            elif servernum=='4':
+                self.theclient_socket.send('CAT_FRIEND'.encode('utf-8'))
+                os.system('cls')
+                self.cat_friend()
+            elif servernum=='5':
+                self.theclient_socket.send('PRIVATE_CHAT'.encode('utf-8'))
+                os.system('cls')
+                self.private_chat()
 
 
 
