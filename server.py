@@ -24,7 +24,7 @@ class Client_Handle():
     def recvmsg_group_view(self):
         global group_client
         group_client.append(self.client_socket)
-        print('len is %s' %len(group_client))
+        # print('len is %s' %len(group_client))
         while True:
             try:
                 recv_data=self.client_socket.recv(1024).decode('utf-8')
@@ -175,10 +175,10 @@ class Client_Handle():
         # 该用户存在
         if not user_data[2]:
             self.client_socket.send('FAIL'.encode('utf-8'))
-        elif friend_name in user_data[2]:
+        elif friend_name in user_data[2].split('++'):
             self.client_socket.send('OK'.encode('utf-8'))
             # 该用户在线
-            if friend_name in username_dic:
+            if friend_name in private_client:
                 self.client_socket.send('OK'.encode('utf-8'))
             # 该用户不在线
             else:
@@ -194,26 +194,61 @@ class Client_Handle():
         global private_client
         private_client.append(self.username)
         # ps
-        print(private_client)
+        # print(private_client)
         global username_dic
+        # 判断用户需不需要查看历史消息
+        flag=self.client_socket.recv(1024).decode('utf-8')
+        if flag=='YES':
+            self.get_history_msg_view(friend_name)
         while True:
             try:
                 recv_data=self.client_socket.recv(1024).decode('utf-8')
+                # print(recv_data)
                 if recv_data=='EXIT':
+                    # 通知监听线程结束
                     self.client_socket.send('$$##$$EXIT$$##$$'.encode('utf-8'))
                     if friend_name in private_client:
                         send_data='%s已离开聊天室' %self.username
                         username_dic[friend_name].send(send_data.encode('utf-8'))
                     break
                 elif recv_data:
-                    sql=''''insert into private_msg(username1,username2,content) values(%s,%s,%s)'''
+                    sql='''insert into private_msg(username1,username2,content) values(%s,%s,%s)'''
                     cursor1.execute(sql,[self.username,friend_name,recv_data])
                     conn.commit()
+                    # print('------------------')
+                    # print(friend_name)
+                    print(username_dic)
                     if friend_name in private_client:
                         username_dic[friend_name].send(recv_data.encode('utf-8'))
             except:
+                print('error')
                 break
         private_client.remove(self.username)
+
+
+    def get_history_msg_view(self,friend_name):
+        sql1='''select id from private_msg where username1=%s and username2=%s order by id desc limit 1'''
+        cursor1.execute(sql1,[self.username,friend_name])
+        data=cursor1.fetchone()
+        if data:
+            last_id=data[0]
+        else:
+            last_id=0
+        # print(last_id)
+        sql2='''select * from private_msg where username1=%s and username2=%s and id>%s;'''
+        cursor1.execute(sql2,[friend_name,self.username,last_id])
+        data=cursor1.fetchall()
+        # ps
+        # print(data)
+        END='THE MSG IS END'
+        if data:
+            for one_data in data:
+                # print(one_data[3])
+                self.client_socket.send((one_data[3]+'$$##$$').encode('utf-8'))
+            self.client_socket.send(END.encode('utf-8'))
+
+        else:
+            self.client_socket.send(END.encode('utf-8'))
 
     def run(self):
         global username_dic
