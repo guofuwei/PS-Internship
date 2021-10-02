@@ -5,6 +5,8 @@ import settings
 import json
 import hashlib
 import datetime
+import re
+import time
 
 
 conn = pymysql.connect(
@@ -211,17 +213,19 @@ class Client_Handle():
                         send_data='%s已离开聊天室' %self.username
                         username_dic[friend_name].send(send_data.encode('utf-8'))
                     break
+                elif recv_data=='SENDFILE':
+                    # print(recv_data)
+                    self.send_file_view(friend_name)
                 elif recv_data:
+                    if recv_data.split(':')[-1]=='SENDFILE':
+                        pass
                     sql='''insert into private_msg(username1,username2,content) values(%s,%s,%s)'''
                     cursor1.execute(sql,[self.username,friend_name,recv_data])
                     conn.commit()
-                    # print('------------------')
-                    # print(friend_name)
-                    print(username_dic)
                     if friend_name in private_client:
                         username_dic[friend_name].send(recv_data.encode('utf-8'))
             except:
-                print('error')
+                print('private_chat_detail_view is error')
                 break
         private_client.remove(self.username)
 
@@ -249,6 +253,38 @@ class Client_Handle():
 
         else:
             self.client_socket.send(END.encode('utf-8'))
+
+    def send_file_view(self,friend_name):
+        flag=self.client_socket.recv(1024).decode('utf-8')
+        # print(flag)
+        if flag=='YES':
+            filename=self.client_socket.recv(1024).decode('utf-8')
+            # print('filename is %s' %filename)
+            # print('username_dic is %s' %username_dic)
+            # print('friend name is %s' %friend_name)
+            # 转发文件名
+            if friend_name in private_client:
+                username_dic[friend_name].send(('$$##$$YOU RECV A FILE$$##$$'+filename).encode('utf-8'))
+                time.sleep(0.05)
+            else:
+                filename=filename+'_unsend_%s' %friend_name
+            # print('The new filename is %s' %filename)
+            END_FLAG='$$##$$THE MSG IS END$$##$$'.encode('utf-8')
+            while True:
+                recv_data=self.client_socket.recv(8*1024)
+                # print('recv_data is %s' %recv_data)
+                
+                # 转发文件：
+                if friend_name in private_client:
+                    username_dic[friend_name].send(recv_data)
+                    # print('--------------')
+                if END_FLAG in recv_data:
+                    break
+                with open('recv_file\\'+filename,'ab') as f:
+                    f.write(recv_data)
+            print('文件传输完成')
+        else:
+            exit()
 
     def run(self):
         global username_dic

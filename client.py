@@ -162,6 +162,7 @@ class Client():
                         os.system('cls')
                         print('*****欢迎来到你和%s的私人聊天室*****' %friend_name)
                         print('*****输入EXIT以退出*****')
+                        print('*****输入SENDFILE以发送文件*****')
                         # 下列开始询问是否要查看历史消息
                         flag=input('是否查看历史未读消息(是:YES/否:other):')
                         if flag=='YES':
@@ -169,8 +170,9 @@ class Client():
                             self.get_history_msg()
                         else:
                             self.theclient_socket.send('NO'.encode('utf-8'))
+                        print('请输入您要发送的信息')
                         # 同时开启监听和发送两个进程
-                        t1=threading.Thread(target=self.send_msg)
+                        t1=threading.Thread(target=self.send_private_msg)
                         t2=threading.Thread(target=self.recv_private_msg)
                         t1.start()
                         t2.start()
@@ -191,6 +193,7 @@ class Client():
                         os.system('cls')
                         print('*****欢迎来到你和%s的私人聊天室*****' %friend_name)
                         print('*****输入EXIT以退出*****')
+                        print('*****输入SENDFILE以发送文件*****')
                         # 下列开始询问是否要查看历史消息
                         flag=input('是否查看历史未读消息(是:YES/否:other):')
                         if flag=='YES':
@@ -200,7 +203,7 @@ class Client():
                             self.theclient_socket.send('NO'.encode('utf-8'))
                         print('请输入您要发送的信息')
                         # 同时开启监听和发送两个进程
-                        t1=threading.Thread(target=self.send_msg)
+                        t1=threading.Thread(target=self.send_private_msg)
                         t2=threading.Thread(target=self.recv_private_msg)
                         t1.start()
                         t2.start()
@@ -212,6 +215,51 @@ class Client():
         else:
             print('该用户不存在')
 
+    def send_private_msg(self):
+            while True:
+                send_data=input()
+                if send_data=='EXIT':
+                    self.theclient_socket.send('EXIT'.encode('utf-8'))
+                    break
+                elif send_data=='SENDFILE':
+                    self.theclient_socket.send('SENDFILE'.encode('utf-8'))
+                    self.send_file()
+                    # t=threading.Thread(target=self.recv_private_msg)
+                    # t.start()
+                self.theclient_socket.send((self.username+':'+send_data).encode('utf-8'))
+
+    def send_file(self):
+        print('---send file is there---')
+        END='$$##$$THE MSG IS END$$##$$'
+        filepath=input('请输入要传输的文件路径:')
+        try:
+            f=open(filepath,'rb')
+            self.theclient_socket.send('YES'.encode('utf-8'))
+            filename=filepath.split('\\')[-1]
+            # print(filename)
+            self.theclient_socket.send(filename.encode('utf-8'))
+
+            time.sleep(0.2)
+            data=f.read(1024*8)
+            # print('the send data is %s' %data)
+            while data:
+                self.theclient_socket.send(data)
+                data=f.read(1024*8)
+            self.theclient_socket.send(END.encode('utf-8'))
+            
+            # recv_flag=self.theclient_socket.recv(1024).decode('utf-8')
+            # if recv_flag=='OK':
+            print('文件上传成功!')
+            time.sleep(0.2)
+        except:
+            self.theclient_socket.send('NO'.encode('utf-8'))
+            print('文件路径错误或该文件不存在')
+        # # 重启发送线程
+        # t1=threading.Thread(target=self.send_private_msg)
+        # t1.start()
+        # t1.join()
+        
+
 
     def recv_private_msg(self):
         while True:
@@ -219,10 +267,26 @@ class Client():
                 recv_data=self.theclient_socket.recv(1024).decode('utf-8')
                 if recv_data=='$$##$$EXIT$$##$$':
                     break
+                elif '$$##$$YOU RECV A FILE$$##$$' in recv_data:
+                    filename=recv_data.strip('$$##$$YOU RECV A FILE$$##$$')
+                    self.recv_file(filename)
                 elif recv_data:
                     print(recv_data)
             except:
                 break
+
+    def recv_file(self,filename):
+        print('***您的好友发了一个文件给您***')
+        END_FLAG='$$##$$THE MSG IS END$$##$$'.encode('utf-8')
+        while True:
+            # print(filename)
+            recv_data=self.theclient_socket.recv(8*1024)
+            # print('recv_data is %s' %recv_data)
+            if END_FLAG in recv_data:
+                break
+            with open('client_recv\\'+filename,'ab') as f:
+                f.write(recv_data)
+        print('***文件接受完成***')
 
     def get_history_msg(self):
         print('历史消息如下:')
@@ -235,10 +299,13 @@ class Client():
             recv_data=self.theclient_socket.recv(1024).decode('utf-8')
             all_data+=recv_data
         all_data_list=all_data.split('$$##$$')
+        all_data_list.remove(END)
         # print(all_data_list)
-        for msg in all_data_list:
-            if msg!=END:
+        if all_data_list:
+            for msg in all_data_list:
                 print(msg)
+        else:
+            print('无历史消息')
 
 
 
